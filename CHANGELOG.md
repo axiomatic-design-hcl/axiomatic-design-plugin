@@ -1,5 +1,7 @@
 # Changelog
 
-This file records releases of both plugins in this repository.
-Both plugins share one version and release together under one repository tag, `v<version>`.
-The maintainer creates each repository tag manually.
+This file records changes to the marketplace and its plugin. Releases use a repository tag named `v<version>`.
+
+## Unreleased
+
+The marketplace lists `axiomatic-design-skills` for installation in Claude Code. The plugin includes the `axiomatic-software-design` skill and its reference files.

@@ -1,0 +1,9 @@
+{
+  "name": "axiomatic-design-skills",
+  "version": "0.1.0",
+  "description": "Design and review software architecture with Axiomatic Design.",
+  "author": {
+    "name": "Axiomatic Software Design contributors"
+  },
+  "license": "Apache-2.0"
+}

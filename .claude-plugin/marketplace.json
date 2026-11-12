@@ -1,0 +1,14 @@
+{
+  "name": "axiomatic-design-marketplace",
+  "description": "Claude Code skills for Axiomatic Design in software architecture.",
+  "owner": {
+    "name": "Axiomatic Software Design contributors"
+  },
+  "plugins": [
+    {
+      "name": "axiomatic-design-skills",
+      "source": "./plugins/axiomatic-design-skills",
+      "description": "Design and review software architecture with Axiomatic Design."
+    }
+  ]
+}
