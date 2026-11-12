@@ -1,0 +1,3 @@
+interface:
+  display_name: "Axiomatic Software Design"
+  short_description: "Design architectures using the two design axioms"
