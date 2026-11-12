@@ -1,0 +1,30 @@
+{
+  "skill_name": "adhcl",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Convert this completed Axiomatic Software Design to .ad.hcl without redesigning it. Boundary: document retrieval only. N1: readers find documents. FR1 (alias FR1): return matching documents; source criterion: return all matches, with no supplied metric or threshold. DP1 (alias DP1): selected search index; responsibility: use the index to select matches. FR11 (alias FR11) is inside DP1: admit only valid query text; qualitative criterion: reject invalid query text. DP11 (alias DP11): selected query policy; responsibility: apply the supplied query grammar before search. The design states that DP1 materially affects FR1 because its selection rule determines the returned matches. DP11 materially affects FR11 because its grammar determines admission. No other influences, modules, PVs, scenarios, probabilities, or empirical observations are supplied. Treat this prompt as a user design, not a published paper. Write the files and report what was actually checked.",
+      "expected_output": "One merged design root, root need link, parent = dp.search_index or equivalent on the child FR, preserved aliases, qualitative criteria, two material influences, no fabricated missing design facts or tool success.",
+      "files": [],
+      "assertions": [
+        "The child FR refers to the parent DP, and root FR refers to the need.",
+        "Both supplied material influences retain their mechanisms.",
+        "No numeric acceptance limits, modules, evidence, or blanket default zeros are invented.",
+        "The response distinguishes native parsing from full language validation."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Write a RequirementsHCL project for this supplied design. Boundary: catalog lookup only. Need: find matching items. FR lookup has the user criterion metric \"all matching items are returned\", op ==, value true. Selected DP index controls lookup and uses the catalog index to select matching items. Its material influence mechanism is that the selection rule determines the returned item set. PV catalog_table realizes index. Module search realizes index, takes query text, returns matching items, owns no state, has no module dependencies, preserves the invariant \"No matching item is omitted\", and returns lookup_failed on index failure. Its acceptance checks must cover the supplied criterion. Scenario matching has kind operational and one instruction: \"Search a fixture with known matches and compare every returned item with the expected set.\" It verifies the lookup criterion. Add a Terraform binding for PV catalog_table at aws_dynamodb_table.catalog using observation source tf_snapshot. Add a behavior link for module search to model catalog_behavior, exact revision catalog-r7, target kind slice, target label lookup_items. Request the HTML view with requirements_first layout and source locations. Create an explicit manifest. There are no actual Terraform observations, external behavior model files, or measured trials. Use adhcl to validate and produce HTML if a compatible executable is available, but do not install anything.",
+      "expected_output": "Core plus explicitly listed attachments and owners; exact standard payloads; no duplicate PV address; no invented observations, revision fallback, probability, or command interface.",
+      "files": [],
+      "assertions": [
+        "The manifest explicitly lists every core and attachment file and declares the three standard owner contracts.",
+        "Binding, behavior, and view payloads preserve all supplied values and correct subject reference types.",
+        "The Terraform address appears only in the binding attachment, not the core PV.",
+        "The supplied criterion and complete module/scenario contracts retain typed acceptance references.",
+        "The response does not claim implemented tool, HTML output, external resolution, or binding success without observations."
+      ]
+    }
+  ]
+}
