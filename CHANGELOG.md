@@ -4,8 +4,10 @@ This file records changes to the marketplace and its plugin. Releases use a repo
 
 ## Unreleased
 
-The marketplace lists `axiomatic-design-skills` for installation in Claude Code. The plugin includes the `axiomatic-software-design` skill and its reference files.
+## 0.1.0 - 2026-11-12
 
-The manifests name `dclimber` as the maintainer. The plugin includes a display name, search keywords, and a 512-pixel icon. The repository no longer contains an empty alternate marketplace file.
+This release prepares the first Claude Code marketplace and plugin. The marketplace lists `axiomatic-design-skills` for installation.
 
-Both README files use `axiomatic-design-hcl/axiomatic-design-plugin` for installation from GitHub. The plugin manifest includes the repository and homepage URLs.
+The plugin contains one skill, `axiomatic-software-design`, and its reference files. The skill helps users design and review software systems with Axiomatic Design.
+
+The README files provide installation commands for the GitHub repository. The plugin includes an Apache 2.0 license and an icon.
