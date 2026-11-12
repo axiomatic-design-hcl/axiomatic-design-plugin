@@ -1,9 +1,11 @@
 {
   "name": "axiomatic-design-skills",
+  "displayName": "Axiomatic Design Skills",
+  "keywords": ["axiomatic-design", "architecture", "design-review"],
   "version": "0.1.0",
   "description": "Design and review software architecture with Axiomatic Design.",
   "author": {
-    "name": "Axiomatic Software Design contributors"
+    "name": "dclimber"
   },
   "license": "Apache-2.0"
 }

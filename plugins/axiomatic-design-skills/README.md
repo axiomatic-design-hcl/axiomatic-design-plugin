@@ -4,7 +4,14 @@ This plugin helps software architects and developers design or review systems wi
 
 ## Use the skill
 
-Install the plugin through the [marketplace](../../README.md), then start Claude Code. Enter `/axiomatic-design-skills:axiomatic-software-design` and describe your system and decision. You can also ask Claude to use Axiomatic Design in your request.
+From a local checkout of this repository, register the marketplace in your shell:
+
+```bash
+claude plugin marketplace add /path/to/axiomatic-design-plugin
+claude plugin install axiomatic-design-skills@axiomatic-design-marketplace
+```
+
+Replace `/path/to/axiomatic-design-plugin` with the absolute path to your checkout. Restart Claude Code after installation. Enter `/axiomatic-design-skills:axiomatic-software-design` and describe your system and decision.
 
 Give Claude your requirements, constraints, and available architecture evidence. The skill identifies assumptions and unknowns. It does not prove that a design is correct, and it does not replace testing.
 

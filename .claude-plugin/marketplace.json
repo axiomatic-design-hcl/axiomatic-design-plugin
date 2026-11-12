@@ -2,7 +2,7 @@
   "name": "axiomatic-design-marketplace",
   "description": "Claude Code skills for Axiomatic Design in software architecture.",
   "owner": {
-    "name": "Axiomatic Software Design contributors"
+    "name": "dclimber"
   },
   "plugins": [
     {
