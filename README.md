@@ -4,10 +4,10 @@ This marketplace provides a Claude Code plugin for software architects and devel
 
 ## Install
 
-Install [Claude Code](https://code.claude.com/docs/en/setup) first. Clone this repository and open a shell at its root. Register the marketplace from that shell:
+Install [Claude Code](https://code.claude.com/docs/en/setup) first. Open your shell. Register the marketplace from GitHub:
 
 ```bash
-claude plugin marketplace add "$(pwd)"
+claude plugin marketplace add axiomatic-design-hcl/axiomatic-design-plugin
 ```
 
 Install the plugin:
