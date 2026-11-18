@@ -4,6 +4,8 @@ This file records changes to the marketplace and its plugin. Releases use a repo
 
 ## Unreleased
 
+## 0.1.1 - 2026-11-18
+
 The marketplace lists a second plugin, `adhcl`. Before this change, the `adhcl` skill was in the repository, but Claude Code could not install it.
 
 The `adhcl` plugin contains these parts:
