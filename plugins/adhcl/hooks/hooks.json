@@ -1,0 +1,17 @@
+{
+  "description": "Run adhcl validate after Claude edits a RequirementsHCL file.",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/validate-adhcl.sh\"",
+            "timeout": 60
+          }
+        ]
+      }
+    ]
+  }
+}

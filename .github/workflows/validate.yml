@@ -1,0 +1,37 @@
+name: validate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  plugins:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Claude Code
+        run: npm install --global @anthropic-ai/claude-code@2.1.327
+
+      - name: Validate the marketplace
+        run: claude plugin validate .
+
+      - name: Validate the axiomatic-design-skills plugin
+        run: claude plugin validate ./plugins/axiomatic-design-skills
+
+      - name: Validate the adhcl plugin
+        run: claude plugin validate ./plugins/adhcl
+
+      - name: Make sure that the hook script is executable
+        run: test -x plugins/adhcl/hooks/validate-adhcl.sh
+
+      - name: Test the hook
+        run: bash tests/test-validate-hook.sh

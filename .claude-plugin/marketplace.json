@@ -1,6 +1,6 @@
 {
   "name": "axiomatic-design-marketplace",
-  "description": "Claude Code skills for Axiomatic Design in software architecture.",
+  "description": "Claude Code plugins for Axiomatic Design in software architecture and for RequirementsHCL .ad.hcl files.",
   "owner": {
     "name": "dclimber"
   },
@@ -9,6 +9,11 @@
       "name": "axiomatic-design-skills",
       "source": "./plugins/axiomatic-design-skills",
       "description": "Design and review software architecture with Axiomatic Design."
+    },
+    {
+      "name": "adhcl",
+      "source": "./plugins/adhcl",
+      "description": "Write and check RequirementsHCL .ad.hcl files, and validate them with the adhcl tool after each edit."
     }
   ]
 }

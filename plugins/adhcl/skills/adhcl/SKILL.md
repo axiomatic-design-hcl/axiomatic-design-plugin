@@ -8,6 +8,7 @@ description: "Translate an existing Axiomatic Software Design into RequirementsH
 Translate the supplied design into `requirements_hcl/core/1` files.
 Preserve its requirements, choices, conditions, and evidence limits.
 Use `axiomatic-software-design` for design decisions, not for language syntax.
+That skill is in the `axiomatic-design-skills` plugin of the same marketplace.
 
 A functional requirement (FR) states an outcome.
 A design parameter (DP) controls an outcome.
@@ -84,6 +85,7 @@ A successful native HCL parse does not establish typed resolution or design supp
 
 Write the requested files to the target location.
 Report the input path that selects them.
+If the `adhcl-verifier` subagent is available, ask it for the final check and report its verdict.
 State which tool commands ran and what they established.
 If no language tool is available, state that full validation did not run.
 
