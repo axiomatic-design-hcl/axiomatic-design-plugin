@@ -1,6 +1,6 @@
 # ADHCL
 
-This plugin helps Claude Code write and check RequirementsHCL files. These files use the extensions `.ad.hcl`, `.ad.ext.hcl`, and `.ad.project.hcl`. The plugin contains one skill, one subagent, and one hook.
+This plugin helps Codex and Claude Code write and check RequirementsHCL files. These files use the extensions `.ad.hcl`, `.ad.ext.hcl`, and `.ad.project.hcl`. Both clients use the same skill. Claude Code also uses one subagent and one hook.
 
 ## Parts
 
@@ -12,7 +12,13 @@ This plugin helps Claude Code write and check RequirementsHCL files. These files
 
 The skill writes the design. It does not make design decisions. For design decisions, install the `axiomatic-design-skills` plugin from the same marketplace.
 
-## Install
+## Install in Codex
+
+Follow the [Codex installation instructions](../../README.md#install-in-codex), then use `$adhcl` in a new chat.
+
+Codex loads the skill and its references from the portable `plugin.json`. The Claude Code hook and verifier agent are not enabled in Codex. The skill runs validation explicitly with an available `adhcl` binary; it reports when full validation cannot run.
+
+## Install in Claude Code
 
 Install Claude Code first. Then run these commands in your shell:
 
@@ -25,7 +31,7 @@ Restart Claude Code after installation. Enter `/adhcl:adhcl` and give Claude the
 
 The hook and the subagent need the `adhcl` binary on your `PATH`. Build it from the [adhcl repository](https://github.com/axiomatic-design-hcl/adhcl) or download a release. Without the binary, the hook does nothing, and the subagent reports `NOT CHECKED`.
 
-## How the hook selects the input
+## How the Claude Code hook selects the input
 
 After Claude edits or writes a file, the hook selects the input for `adhcl validate` in this order:
 
@@ -52,6 +58,6 @@ The hook is a Bash script. On Windows, it runs only where Claude Code runs hooks
 
 ## Data
 
-The skill and the subagent contain instructions and reference files. The hook runs the local `adhcl` binary on your files. The plugin sends no data to an external service. Claude Code handles your prompts and any files that you ask it to read under its own service and privacy terms.
+The skill and the subagent contain instructions and reference files. The hook runs the local `adhcl` binary on your files. The plugin sends no data to an external service. Your chosen client handles your prompts and any files that you ask it to read under its own service and privacy terms.
 
 The bundled references in `skills/adhcl/references/`, except `authoring.md` and `tool-usage.md`, are copies of the RequirementsHCL specification. The plugin uses the [Apache License 2.0](LICENSE).

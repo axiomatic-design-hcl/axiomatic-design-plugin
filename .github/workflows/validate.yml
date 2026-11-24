@@ -18,6 +18,12 @@ jobs:
         with:
           node-version: "22"
 
+      - name: Install Codex
+        run: npm install --global @openai/codex@0.172.0
+
+      - name: Test Codex plugin installation
+        run: bash tests/test-codex-plugins.sh
+
       - name: Install Claude Code
         run: npm install --global @anthropic-ai/claude-code@2.1.327
 

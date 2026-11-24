@@ -1,0 +1,34 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "adhcl",
+  "keywords": [
+    "axiomatic-design",
+    "requirements",
+    "hcl",
+    "adhcl"
+  ],
+  "version": "0.1.1",
+  "description": "Write and check RequirementsHCL .ad.hcl files with the adhcl tool.",
+  "homepage": "https://github.com/axiomatic-design-hcl/axiomatic-design-plugin",
+  "repository": "https://github.com/axiomatic-design-hcl/axiomatic-design-plugin",
+  "author": {
+    "name": "dclimber"
+  },
+  "license": "Apache-2.0",
+  "extensions": {
+    "com.openai": {
+      "hooks": [],
+      "interface": {
+        "displayName": "ADHCL",
+        "shortDescription": "Write and check RequirementsHCL .ad.hcl files with the adhcl tool.",
+        "developerName": "dclimber",
+        "category": "Developer Tools",
+        "logo": "./.claude-plugin/icon.png",
+        "composerIcon": "./.claude-plugin/icon.png",
+        "defaultPrompt": [
+          "Use $adhcl to write the supplied design as RequirementsHCL and validate it."
+        ]
+      }
+    }
+  }
+}

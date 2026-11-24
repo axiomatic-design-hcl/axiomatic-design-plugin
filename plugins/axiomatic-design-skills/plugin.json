@@ -1,0 +1,33 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "axiomatic-design-skills",
+  "keywords": [
+    "axiomatic-design",
+    "architecture",
+    "design-review"
+  ],
+  "version": "0.1.0",
+  "description": "Design and review software architecture with Axiomatic Design.",
+  "homepage": "https://github.com/axiomatic-design-hcl/axiomatic-design-plugin",
+  "repository": "https://github.com/axiomatic-design-hcl/axiomatic-design-plugin",
+  "author": {
+    "name": "dclimber"
+  },
+  "license": "Apache-2.0",
+  "extensions": {
+    "com.openai": {
+      "hooks": [],
+      "interface": {
+        "displayName": "Axiomatic Design Skills",
+        "shortDescription": "Design and review software architecture with Axiomatic Design.",
+        "developerName": "dclimber",
+        "category": "Developer Tools",
+        "logo": "./.claude-plugin/icon.png",
+        "composerIcon": "./.claude-plugin/icon.png",
+        "defaultPrompt": [
+          "Use $axiomatic-software-design to review my software architecture."
+        ]
+      }
+    }
+  }
+}
