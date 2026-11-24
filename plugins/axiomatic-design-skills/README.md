@@ -4,7 +4,8 @@ This plugin helps software architects and developers design or review systems wi
 
 ## Use in Codex
 
-Follow the [Codex installation instructions](../../README.md#install-in-codex), then use `$axiomatic-software-design` in a new chat. Codex and Claude Code use the same skill and references.
+Follow the [Codex installation instructions](../../README.md#install-in-codex). Start a new chat and enter `$axiomatic-software-design`.
+Codex and Claude Code use the same skill and references.
 
 ## Use in Claude Code
 

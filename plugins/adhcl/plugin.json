@@ -7,7 +7,7 @@
     "hcl",
     "adhcl"
   ],
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Write and check RequirementsHCL .ad.hcl files with the adhcl tool.",
   "homepage": "https://github.com/axiomatic-design-hcl/axiomatic-design-plugin",
   "repository": "https://github.com/axiomatic-design-hcl/axiomatic-design-plugin",

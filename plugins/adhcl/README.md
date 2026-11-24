@@ -14,9 +14,11 @@ The skill writes the design. It does not make design decisions. For design decis
 
 ## Install in Codex
 
-Follow the [Codex installation instructions](../../README.md#install-in-codex), then use `$adhcl` in a new chat.
+Follow the [Codex installation instructions](../../README.md#install-in-codex). Start a new chat and enter `$adhcl`.
 
-Codex loads the skill and its references from the portable `plugin.json`. The Claude Code hook and verifier agent are not enabled in Codex. The skill runs validation explicitly with an available `adhcl` binary; it reports when full validation cannot run.
+Codex loads the skill and its references from `plugin.json`. The Claude Code hook and verifier agent do not run in Codex.
+The skill runs validation with the `adhcl` binary when it is available. It reports when full validation cannot run.
+Install the binary from the [adhcl repository](https://github.com/axiomatic-design-hcl/adhcl).
 
 ## Install in Claude Code
 

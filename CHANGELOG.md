@@ -4,8 +4,10 @@ This file records changes to the marketplace and its plugin. Releases use a repo
 
 ## Unreleased
 
-- Added a Codex marketplace catalog and portable manifests for both plugins, sharing the existing skills and references with Claude Code.
-- Documented Codex installation and usage. The Claude Code hook and verifier agent remain specific to Claude Code; Codex uses explicit validation through the ADHCL skill.
+## 0.1.2 - 2026-11-24
+
+- Added a Codex marketplace catalog and manifests for both plugins. Codex uses the same skills and references as Claude Code.
+- Added Codex installation and usage instructions. The Claude Code hook and verifier agent do not run in Codex.
 - Added an isolated Codex installation check to CI.
 
 ## 0.1.1 - 2026-11-18

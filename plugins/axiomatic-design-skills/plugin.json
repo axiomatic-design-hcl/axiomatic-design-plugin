@@ -6,7 +6,7 @@
     "architecture",
     "design-review"
   ],
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "Design and review software architecture with Axiomatic Design.",
   "homepage": "https://github.com/axiomatic-design-hcl/axiomatic-design-plugin",
   "repository": "https://github.com/axiomatic-design-hcl/axiomatic-design-plugin",

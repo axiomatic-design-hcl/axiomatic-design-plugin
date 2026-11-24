@@ -9,19 +9,24 @@ This marketplace provides two plugins for Codex and Claude Code, for software ar
 
 ## Install in Codex
 
-From a local checkout, run these commands at the repository root:
+Install Codex CLI 0.172.0 or newer. Register the marketplace from GitHub:
 
 ```bash
-codex plugin marketplace add .
+codex plugin marketplace add axiomatic-design-hcl/axiomatic-design-plugin
+```
+
+Install both plugins and list them:
+
+```bash
 codex plugin add axiomatic-design-skills@axiomatic-design-marketplace
 codex plugin add adhcl@axiomatic-design-marketplace
 codex plugin list --marketplace axiomatic-design-marketplace
 ```
 
-After these changes are published to GitHub, you can register the remote marketplace instead:
+For a local checkout, register the marketplace from the repository root instead:
 
 ```bash
-codex plugin marketplace add axiomatic-design-hcl/axiomatic-design-plugin
+codex plugin marketplace add .
 ```
 
 Start a new Codex chat after installation. Use `$axiomatic-software-design` for design work and `$adhcl` to write or check `.ad.hcl` files. Both plugins share their skills and references with Claude Code.

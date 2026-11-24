@@ -2,7 +2,7 @@
   "name": "adhcl",
   "displayName": "ADHCL",
   "keywords": ["axiomatic-design", "requirements", "hcl", "adhcl"],
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Write and check RequirementsHCL .ad.hcl files, and validate them with the adhcl tool after each edit.",
   "homepage": "https://github.com/axiomatic-design-hcl/axiomatic-design-plugin",
   "repository": "https://github.com/axiomatic-design-hcl/axiomatic-design-plugin",
