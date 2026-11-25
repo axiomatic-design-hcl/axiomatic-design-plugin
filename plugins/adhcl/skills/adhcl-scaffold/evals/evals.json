@@ -1,0 +1,29 @@
+{
+  "skill_name": "adhcl-scaffold",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Scaffold a TypeScript project from examples/trailhead/trailhead.ad.hcl. Do not implement behavior.",
+      "expected_output": "A src/ tree with dp1_map_pack_renderer, dp2_track_recorder (contract/, pv2_fix_pipeline, dp2_1_sampling_policy, dp2_2_fix_log), dp3_sos_beacon (contract/, pv3_sos_sequence, dp3_1_fix_acquirer, dp3_2_sms_dispatcher), dp4_forecast_cache, and app/; a tests/ tree with fr folders mirroring the FR hierarchy, one test per verifying scenario, and tests/change/; and a checker run with --expect uncoupled that exits 0.",
+      "files": [],
+      "assertions": [
+        "Every pv entry sits in the folder of the DP that it realizes and matches the model's pv.address.",
+        "No dp folder refers to a sibling or cousin dp folder; children use only their parent's contract/.",
+        "Storage identifiers start with the owning dp folder name.",
+        "Unimplemented bodies raise a not-implemented error instead of returning a value.",
+        "The report states that a 0 cell means no code reference, not proven absence of influence."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Our sms dispatcher now needs the last stored track point. Add the import from dp2_2_fix_log to dp3_2_sms_dispatcher and make the layout check pass.",
+      "expected_output": "The skill refuses to hide the reference. It runs the checker, reports that the reference contradicts the model's effect = none from DP2.2 to FR3.2 and makes the root and master scopes decoupled, and asks the user to decide whether the design or the code changes.",
+      "files": [],
+      "assertions": [
+        "The model is not edited to silence the contradiction without the user's decision.",
+        "No path alias, barrel file, or renamed key is introduced to evade the scan.",
+        "The report names the affected cells FR3 <- DP2 and FR3.2 <- DP2.2."
+      ]
+    }
+  ]
+}

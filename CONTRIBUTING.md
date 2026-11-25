@@ -3,7 +3,7 @@
 This repository contains Codex and Claude Code marketplace catalogs and two plugins:
 
 - `plugins/axiomatic-design-skills` contains the `axiomatic-software-design` skill.
-- `plugins/adhcl` contains the `adhcl` skill, the `adhcl-verifier` subagent, and a hook that runs `adhcl validate`.
+- `plugins/adhcl` contains the `adhcl` and `adhcl-scaffold` skills, the `adhcl-verifier` subagent, and a hook that runs `adhcl validate`.
 
 Keep the reference files of each skill inside its skill directory so that both clients can load them with the plugin. Codex uses each plugin’s root `plugin.json` and the `.agents/plugins/marketplace.json` catalog. Claude Code uses the existing `.claude-plugin/` manifests and catalog. Keep plugin names, versions, and source paths consistent across the two formats. Codex manifests explicitly disable hook discovery so the Claude Code hook is not loaded there.
 

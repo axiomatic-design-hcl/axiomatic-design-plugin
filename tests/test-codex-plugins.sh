@@ -25,6 +25,7 @@ assert.equal(installed.length, 2);
 for (const [name, skill] of [
   ['axiomatic-design-skills', 'axiomatic-software-design'],
   ['adhcl', 'adhcl'],
+  ['adhcl', 'adhcl-scaffold'],
 ]) {
   assert(installed.some(plugin => plugin.name === name && plugin.enabled));
   const result = read(path.join(work, name + '.json'));
@@ -35,10 +36,14 @@ for (const [name, skill] of [
   assert.equal(manifest.version, claude.version);
   // Explicitly prevent fallback to the Claude Code hooks/hooks.json.
   assert.deepEqual(manifest.extensions['com.openai'].hooks, []);
-  for (const relative of ['SKILL.md', ...fs.readdirSync(path.join(source, 'skills', skill, 'references')).map(file => 'references/' + file)]) {
+  const skillDir = path.join(source, 'skills', skill);
+  const bundled = ['references', 'scripts']
+    .filter(dir => fs.existsSync(path.join(skillDir, dir)))
+    .flatMap(dir => fs.readdirSync(path.join(skillDir, dir)).map(file => dir + '/' + file));
+  for (const relative of ['SKILL.md', ...bundled]) {
     const relativePath = path.join('skills', skill, relative);
     assert.deepEqual(fs.readFileSync(path.join(result.installedPath, relativePath)), fs.readFileSync(path.join(source, relativePath)));
   }
 }
-console.log('Codex installed both plugins with their skills and references.');
+console.log('Codex installed both plugins with their skills, references, and scripts.');
 JS

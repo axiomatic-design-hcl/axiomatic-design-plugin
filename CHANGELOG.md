@@ -4,6 +4,10 @@ This file records changes to the marketplace and its plugin. Releases use a repo
 
 ## Unreleased
 
+- Added the `adhcl-scaffold` skill to the `adhcl` plugin. It turns an `.ad.hcl` model into a source tree whose folders repeat the model's IDs (`src/dp<N>_<label>/`, `pv<N>_<label>`, `tests/fr<N>_<label>/`), with parent contracts and junction wiring. Its layout contract defines the names and reference rules.
+- Added `ad_layout_check.py` to that skill. It rebuilds each sibling matrix and the master matrix from cross-folder references in the tree, classifies them, and compares the tree with the model. It needs Python 3.9 or later and no packages.
+- Added `examples/trailhead`: an uncoupled model of an offline hiking app, a report with diagrams, and the `adhcl diagram` page.
+
 ## 0.1.2 - 2026-11-24
 
 - Added a Codex marketplace catalog and manifests for both plugins. Codex uses the same skills and references as Claude Code.
