@@ -4,9 +4,14 @@ This file records changes to the marketplace and its plugin. Releases use a repo
 
 ## Unreleased
 
-- Added the `adhcl-scaffold` skill to the `adhcl` plugin. It turns an `.ad.hcl` model into a source tree whose folders repeat the model's IDs (`src/dp<N>_<label>/`, `pv<N>_<label>`, `tests/fr<N>_<label>/`), with parent contracts and junction wiring. Its layout contract defines the names and reference rules.
-- Added `ad_layout_check.py` to that skill. It rebuilds each sibling matrix and the master matrix from cross-folder references in the tree, classifies them, and compares the tree with the model. It needs Python 3.9 or later and no packages.
-- Added `examples/trailhead`: an uncoupled model of an offline hiking app, a report with diagrams, and the `adhcl diagram` page.
+- Added `adhcl-scaffold` to lay out a source tree from a model, with an optional numbered FR/DP/PV layout.
+- Added `ad_layout_check.py`. It builds code-reference matrices from the tree and compares them with the model's influence claims and `cells` defaults. A reference counts for its own cell and each ancestor cell.
+- A code reference beside an authored zero is a review warning. Under `--expect`, it is an error. The skill takes the `--expect` policy from the model's classification.
+- Made empty inventories, missing pairings, invalid paths, and unsupported model inputs fail instead of passing silently.
+- The checker reads `coupling` blocks and `flow` loops. Several files can share one PV name, for example `pv1_x.h`, `pv1_x.c`, and `pv1_x.test.ts`. Files directly in the source root compose like `src/app/`.
+- A structure-only scaffold throws the language's not-implemented error in each unimplemented body. New storage identifiers start with the owning DP folder name. Existing public names change only with approval.
+- Added focused checker regression tests and skill evaluation cases.
+- Added `examples/trailhead` with a model, an explanatory report, and an `adhcl diagram` page.
 
 ## 0.1.2 - 2026-11-24
 

@@ -1,19 +1,19 @@
 # ADHCL
 
-This plugin helps Codex and Claude Code write and check RequirementsHCL files. These files use the extensions `.ad.hcl`, `.ad.ext.hcl`, and `.ad.project.hcl`. It also turns a model into a source tree that repeats the model's IDs. Both clients use the same two skills. Claude Code also uses one subagent and one hook.
+This plugin helps Codex and Claude Code write and inspect RequirementsHCL files. These files use `.ad.hcl`, `.ad.ext.hcl`, and `.ad.project.hcl`. It also maps a model to source boundaries. Both clients use the same two skills. Claude Code also uses one subagent and one hook.
 
 ## Parts
 
 | Part | Name | What it does |
 | --- | --- | --- |
 | Skill | `adhcl` | Turns a finished Axiomatic Design into `.ad.hcl` files, manifests, and attachments. It also repairs and reviews these files. |
-| Skill | `adhcl-scaffold` | Turns an `.ad.hcl` model into a source tree with `src/dp<N>_<label>/`, `pv<N>_<label>`, and `tests/fr<N>_<label>/` items. Its bundled `ad_layout_check.py` rebuilds the design matrices from that tree and compares them with the model. |
+| Skill | `adhcl-scaffold` | Lays out a source tree from a model. Its optional numbered layout names folders after FRs, DPs, and PVs, for example `src/dp2_1_sampling_policy/`. Its bundled checker builds code-reference matrices from the tree and compares them with the model's influence claims. |
 | Subagent | `adhcl-verifier` | Runs `adhcl validate` in a fresh context and reports `PASS`, `FAIL`, or `NOT CHECKED`. It does not edit files. |
 | Hook | `PostToolUse` | Runs `adhcl validate` after Claude edits a RequirementsHCL file, and shows error findings to Claude. |
 
 The `adhcl` skill writes the design. It does not make design decisions. For design decisions, install the `axiomatic-design-skills` plugin from the same marketplace.
 
-The layout checker needs Python 3.9 or later and no packages. A cross-folder reference in the code is evidence of a material influence; no reference does not prove that an influence is absent. See [the layout contract](skills/adhcl-scaffold/references/layout-contract.md).
+The layout checker needs Python 3.9 or later and no packages. It shows where code in one DP branch names a DP in another branch. Such a reference beside an authored zero is a contradiction between code and design. No reference does not prove a zero, because shared state and resources do not show in names. The checker can refute an independence claim, but it cannot prove one. See [the numbered layout contract](skills/adhcl-scaffold/references/layout-contract.md) for the rules and the input limits.
 
 ## Install in Codex
 

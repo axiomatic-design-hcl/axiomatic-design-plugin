@@ -41,3 +41,10 @@ jobs:
 
       - name: Test the hook
         run: bash tests/test-validate-hook.sh
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Test numbered layout checker
+        run: python3 -m unittest discover -s tests -p test_ad_layout_check.py

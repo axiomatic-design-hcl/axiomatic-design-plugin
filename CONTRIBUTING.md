@@ -36,6 +36,12 @@ Run the tests for the hook. They use a fake `adhcl` and need only Bash:
 bash tests/test-validate-hook.sh
 ```
 
+Run the numbered layout checker regressions with Python 3.9 or later:
+
+```bash
+python3 -m unittest discover -s tests -p test_ad_layout_check.py
+```
+
 The `validate` workflow in `.github/workflows/` runs these commands for each pull request.
 
 Start Claude Code with a local plugin:

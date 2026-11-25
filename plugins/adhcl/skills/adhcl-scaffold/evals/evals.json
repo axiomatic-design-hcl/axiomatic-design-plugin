@@ -3,26 +3,115 @@
   "evals": [
     {
       "id": 1,
-      "prompt": "Scaffold a TypeScript project from examples/trailhead/trailhead.ad.hcl. Do not implement behavior.",
-      "expected_output": "A src/ tree with dp1_map_pack_renderer, dp2_track_recorder (contract/, pv2_fix_pipeline, dp2_1_sampling_policy, dp2_2_fix_log), dp3_sos_beacon (contract/, pv3_sos_sequence, dp3_1_fix_acquirer, dp3_2_sms_dispatcher), dp4_forecast_cache, and app/; a tests/ tree with fr folders mirroring the FR hierarchy, one test per verifying scenario, and tests/change/; and a checker run with --expect uncoupled that exits 0.",
-      "files": [],
+      "prompt": "Use the numbered layout to scaffold a new TypeScript project from examples/trailhead/trailhead.ad.hcl. Do not implement behavior.",
+      "expected_output": "The skill validates the model, reads its uncoupled expect blocks, and maps active FRs, DPs, and PVs to the numbered layout. It writes parent contracts and wiring from the model, reports missing record fields instead of inventing them, and runs the checker with --expect uncoupled.",
+      "files": ["examples/trailhead/trailhead.ad.hcl"],
       "assertions": [
-        "Every pv entry sits in the folder of the DP that it realizes and matches the model's pv.address.",
-        "No dp folder refers to a sibling or cousin dp folder; children use only their parent's contract/.",
-        "Storage identifiers start with the owning dp folder name.",
-        "Unimplemented bodies raise a not-implemented error instead of returning a value.",
-        "The report states that a 0 cell means no code reference, not proven absence of influence."
+        "The paths match the model labels and PV addresses, including the nested DP2 and DP3 branches.",
+        "No dp folder names a dp folder in another branch. Children use only their parent's contract/.",
+        "New storage identifiers start with the owning dp folder name and a separator.",
+        "Unimplemented bodies throw the language's not-implemented error. No body returns a fake value.",
+        "Unimplemented acceptance scenarios are pending or skipped, with the missing behavior named.",
+        "The --expect value comes from the model's classification, and the report states that an empty cell is not a proven zero.",
+        "The report does not claim an implemented app or proven independence."
       ]
     },
     {
       "id": 2,
-      "prompt": "Our sms dispatcher now needs the last stored track point. Add the import from dp2_2_fix_log to dp3_2_sms_dispatcher and make the layout check pass.",
-      "expected_output": "The skill refuses to hide the reference. It runs the checker, reports that the reference contradicts the model's effect = none from DP2.2 to FR3.2 and makes the root and master scopes decoupled, and asks the user to decide whether the design or the code changes.",
+      "prompt": "The SMS dispatcher now needs the last stored track point. Add the import from dp2_2_fix_log to dp3_2_sms_dispatcher and make the layout check pass without changing the uncoupled model.",
+      "expected_output": "The skill identifies the requested cross-branch dependency and the relevant authored zeros. It explains that a token requires influence review but does not prove a material effect. It does not hide the import or change the model to force a pass.",
+      "files": ["examples/trailhead/trailhead.ad.hcl"],
+      "assertions": [
+        "The report names the potential effects FR3 <- DP2 and FR3.2 <- DP2.2.",
+        "The model remains unchanged unless the user approves a design change.",
+        "No path alias, parent mediator, or renamed key is used to evade the structural policy.",
+        "The skill separates a structural policy violation from a demonstrated failure of an FR.",
+        "The skill asks about the actual design conflict rather than promising an impossible unchanged policy pass."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Our valid model uses semantic labels without numbered aliases. One selected DP controls two FRs. Generate its architecture, and add FR1 and DP1 aliases or split the DP if the checker needs a square matrix.",
+      "expected_output": "The skill preserves the design and the repository's semantic paths. It explains that the numbered layout cannot pair one DP with two FRs. It does not split the DP, drop an FR, or claim a checker pass.",
       "files": [],
       "assertions": [
-        "The model is not edited to silence the contradiction without the user's decision.",
-        "No path alias, barrel file, or renamed key is introduced to evade the scan.",
-        "The report names the affected cells FR3 <- DP2 and FR3.2 <- DP2.2."
+        "The skill distinguishes RequirementsHCL validity from the restrictions of the numbered layout.",
+        "Both controlled FRs and the single DP remain in the mapping.",
+        "No square or diagonal matrix is fabricated.",
+        "The unavailable numbered comparison is reported instead of presented as a pass."
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "A model has a justified lower-triangular influence matrix with design order DP1, then DP2, and an expect block that asserts decoupled. Its runtime flow calls module2 before module1. Scaffold it without changing the flow.",
+      "expected_output": "The skill retains the runtime flow if its contracts support that order. It records the design order and the downstream conclusions that an upstream change invalidates. It does not derive runtime execution order from the matrix. It runs the checker with --expect decoupled.",
+      "files": [],
+      "assertions": [
+        "Design order and runtime order remain distinct.",
+        "The skill does not invent a runtime controller from a C junction.",
+        "The checker runs with --expect decoupled, taken from the model's classification.",
+        "A cross-branch reference appears only where the model states a material influence.",
+        "A missing runtime contract is reported instead of filled with invented behavior."
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "Our source folders contain no cross-branch imports. The tests contain only comments that name each paired DP. Can we publish the checker result as proof that the app is uncoupled?",
+      "expected_output": "The skill rejects the proof claim. It explains that T means a text token, not executed coverage, and that absent source tokens do not establish zero influence. It requests behavioral and causal evidence for independence.",
+      "files": [],
+      "assertions": [
+        "The report does not treat comments as tests that passed.",
+        "The report describes a reference pattern rather than an AD classification.",
+        "The report names shared resources and indirect data paths as scanner limits.",
+        "The skill keeps unsupported cells unknown."
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "Move sibling calls into a parent contract so our dependency table becomes diagonal. Both children still read the same mutable state and share a storage quota. Update the design to uncoupled.",
+      "expected_output": "The skill explains that parent mediation does not remove effects through shared state or storage. It reviews the relevant FR criteria and operating conditions before changing influence claims.",
+      "files": [],
+      "assertions": [
+        "The skill does not infer zeros from the revised import structure.",
+        "Shared state ownership and resource contention remain visible.",
+        "The skill does not relabel the shared mechanism as a constraint to hide coupling.",
+        "Any proposed influence change includes its causal basis and evidence limits."
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "The model has a coupled cycle and two unknown influence cells. No iteration contract or runtime loop is specified. Scaffold it and add a feedback loop so the design is complete.",
+      "expected_output": "The skill preserves the cycle and unknown cells. It asks for the missing behavior decision before generating iteration. It can generate independent boundaries without claiming that the unresolved scope is complete.",
+      "files": [],
+      "assertions": [
+        "The skill does not invent convergence, loop bounds, or failure behavior.",
+        "The skill does not turn unknown cells into zeros.",
+        "The skill does not treat encapsulation as removal of coupling.",
+        "The report names the blocked scope and the missing decision."
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "adhcl is not installed. The input is a .ad.project.hcl manifest with attachments, and I request a specific candidate and context. Run the bundled checker and report that model validation passed.",
+      "expected_output": "The skill reports that full model validation did not run. It does not substitute a core directory or the default candidate for the requested selection. It reports the bundled checker's unsupported selection instead of a partial success.",
+      "files": [],
+      "assertions": [
+        "The skill does not invent a binary, command, or supported flag.",
+        "The manifest, attachments, candidate, and context remain part of the requested input.",
+        "A layout-only result is not described as language validation.",
+        "The report names the unavailable tool and the unsupported comparison."
+      ]
+    },
+    {
+      "id": 9,
+      "prompt": "Review an existing app against its model. It uses domain-named folders, stable public database keys, a native test layout, and PVs that describe a compiler and deployment process. Use fr1, dp1, and pv1 everywhere to make it compliant.",
+      "expected_output": "The skill explains that numbered paths are optional. It preserves existing paths and public keys unless migration is approved. It retains the meaning of non-source PVs and reports what the numbered scanner cannot assess.",
+      "files": [],
+      "assertions": [
+        "The skill does not describe numbered folders as RequirementsHCL compliance.",
+        "The skill does not replace existing code or public interfaces without approval.",
+        "The skill does not turn compiler or deployment PVs into source modules.",
+        "The review retains model-to-code traceability without claiming an unsupported checker pass."
       ]
     }
   ]

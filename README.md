@@ -5,7 +5,7 @@ This marketplace provides two plugins for Codex and Claude Code, for software ar
 | Plugin | What it does |
 | --- | --- |
 | `axiomatic-design-skills` | Helps you design or review a system with Axiomatic Design. |
-| `adhcl` | Writes the design as RequirementsHCL `.ad.hcl` files and checks them with the `adhcl` tool. Lays out a source tree from a model and rebuilds the design matrices from that tree. |
+| `adhcl` | Writes the design as RequirementsHCL `.ad.hcl` files and checks them with the `adhcl` tool. Lays out a source tree from a model, builds code-reference matrices from that tree, and compares them with the model. |
 
 See [examples/trailhead](examples/trailhead/) for an uncoupled model of an offline hiking app: the `.ad.hcl` file, a report with diagrams, and the `adhcl diagram` page.
 

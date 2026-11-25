@@ -1,23 +1,42 @@
 #!/usr/bin/env python3
-"""Rebuild axiomatic design matrices from an FR/DP/PV source layout.
+"""Build code-reference matrices from the numbered FR/DP/PV source layout.
 
-The layout contract is in ../references/layout-contract.md. This checker reads
-folder names and scans file text for references to other `dp` folders. A
-reference is structural evidence that one DP can change another DP's FR. The
-absence of a reference does not prove a zero: shared runtime resources, data,
-and configuration are invisible to this scan.
+Rows are FR test folders. Columns are DP source folders. R means that code in
+one DP branch names the folder of a DP in another branch. Treat R as a
+possible influence that the model must explain. A dot means that the scan
+found no reference. A dot does not prove a zero, because shared state,
+resources, data, and configuration do not show in names. T means that test
+text in the paired FR folder names the paired DP. Tests are not executed.
+A question mark means that this paired test reference is missing.
 
-Usage:
-  ad_layout_check.py [--root DIR] [--src DIR] [--tests DIR] [--spec PATH]
-                     [--expect uncoupled|decoupled]
+The scan reads UTF-8 files up to 2,000,000 bytes, including comments and
+strings. It does not resolve imports, aliases, generated code, or dynamic
+calls. It skips hidden paths and the directories in SKIP_DIRS. It reports
+other skipped paths as errors. It never follows symlinks.
 
+--spec reads a restricted static subset of one core .ad.hcl file or of the
+immediate *.ad.hcl members of a directory. It is not full HCL or ADHCL
+validation. It rejects manifests, attachments, decision blocks, evidence
+blocks, heredocs, templates, and computed expressions. FIELDS lists the
+supported blocks and fields. Separate attributes need separate lines.
+Unsupported or malformed input stops the model comparison with an error.
+
+The comparison checks the selected DPs, FRs, and PVs against the folders. It
+compares cross-branch references with the authored influence records and
+the `cells` defaults. A reference counts for its own cell and for each
+ancestor cell. A reference beside an authored zero is a review warning, or
+an error under --expect. Conditions and premises are reported, not resolved.
+
+--expect uncoupled forbids every cross-branch reference. --expect decoupled
+forbids reference cycles. Take the value from the model's classification.
 Exit codes: 0 no error findings, 1 error findings, 2 invalid command line.
-Python 3.9 or later, standard library only.
+Python 3.9 or later. Standard library only.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import sys
@@ -26,20 +45,19 @@ from pathlib import Path
 
 LABEL = r"[a-z][a-z0-9]*(?:_[a-z0-9]+)*"
 NAME_RE = re.compile(rf"^(fr|dp|pv)([0-9]+(?:_[0-9]+)*)_({LABEL})$")
+RESERVED_RE = re.compile(r"^(fr|dp|pv)(?:[0-9_]|$)", re.I)
 ALIAS_RE = re.compile(r"^(FR|DP|PV)([0-9]+(?:\.[0-9]+)*)$")
 SKIP_DIRS = {"node_modules", "__pycache__", "build", "dist", "target", "vendor"}
 MAX_BYTES = 2_000_000
-
-Num = tuple  # (2, 1) for FR2.1 / DP2.1
+Num = tuple
 
 
 def fmt(num: Num) -> str:
-    return ".".join(str(n) for n in num)
+    return ".".join(map(str, num))
 
 
 def is_prefix(a: Num, b: Num) -> bool:
-    """True when a is b or an ancestor of b."""
-    return b[: len(a)] == a
+    return b[:len(a)] == a
 
 
 @dataclass
@@ -55,511 +73,795 @@ class Node:
         return f"{self.kind}{'_'.join(map(str, self.num))}_{self.label}"
 
 
-@dataclass
-class Finding:
-    severity: str
-    message: str
-
-    def __str__(self) -> str:
-        return f"- {self.severity}: {self.message}"
-
-
 class Report:
     def __init__(self) -> None:
-        self.findings: list[Finding] = []
+        self.findings = []
 
-    def error(self, msg: str) -> None:
-        self.findings.append(Finding("error", msg))
+    def error(self, message: str) -> None:
+        finding = ("error", message)
+        if finding not in self.findings:
+            self.findings.append(finding)
 
-    def warn(self, msg: str) -> None:
-        self.findings.append(Finding("warning", msg))
+    def warn(self, message: str) -> None:
+        self.findings.append(("warning", message))
 
-    def note(self, msg: str) -> None:
-        self.findings.append(Finding("note", msg))
+    def note(self, message: str) -> None:
+        self.findings.append(("note", message))
 
     @property
     def errors(self) -> int:
-        return sum(1 for f in self.findings if f.severity == "error")
+        return sum(severity == "error" for severity, _ in self.findings)
 
 
-# ── Layout discovery ─────────────────────────────────────────
+def symlink_component(path):
+    return next((part for part in (path, *path.parents) if part.is_symlink()), None)
 
 
 def discover(root: Path, kind: str, rep: Report) -> dict:
-    """Map number tuples to Node for every `kind` folder below root."""
-    nodes: dict = {}
+    nodes = {}
+    labels = {}
+    link = symlink_component(root)
+    if link:
+        rep.error(f"skipped symlink: {link}")
+        return nodes
     if not root.is_dir():
+        rep.error(f"layout root is not a directory: {root}")
         return nodes
 
-    def walk(directory: Path, parent: Node | None) -> None:
-        for entry in sorted(directory.iterdir()):
+    def walk(directory, parent):
+        try:
+            entries = sorted(directory.iterdir())
+        except OSError as exc:
+            rep.error(f"skipped unreadable directory {directory}: {exc}")
+            return
+        for entry in entries:
             if entry.name.startswith(".") or entry.name in SKIP_DIRS:
                 continue
-            m = NAME_RE.match(entry.stem if entry.is_file() else entry.name)
-            if m and m.group(1) == "pv" and kind == "dp":
-                if parent is None:
-                    rep.error(f"{entry} is a pv outside any dp folder.")
-                elif tuple(map(int, m.group(2).split("_"))) != parent.num:
-                    rep.error(f"{entry} has number {m.group(2)}, but its dp folder is {parent.name}.")
+            if entry.is_symlink():
+                rep.error(f"skipped symlink: {entry}")
+                continue
+            is_dir = entry.is_dir()
+            # A file name ends at its first dot: pv1_map.test.ts belongs to pv1_map.
+            name = entry.name if is_dir else entry.name.split(".", 1)[0]
+            match = NAME_RE.fullmatch(name)
+            if not match:
+                if RESERVED_RE.match(name):
+                    rep.error(f"malformed numbered layout name: {entry}")
+                if is_dir:
+                    walk(entry, parent)
+                continue
+            found_kind, digits, label = match.groups()
+            num = tuple(map(int, digits.split("_")))
+            if found_kind == kind and is_dir:
+                if label in labels:
+                    rep.error(f"duplicate {kind.upper()} label {label}: {labels[label]} and {entry}.")
+                labels[label] = entry
+            if found_kind == "pv" and kind == "dp":
+                if parent is None or entry.parent != parent.path:
+                    rep.error(f"{entry}: a PV must sit directly inside its DP folder.")
+                elif num != parent.num:
+                    rep.error(f"{entry}: PV number {fmt(num)} differs from DP{fmt(parent.num)}.")
                 else:
-                    parent.pvs.append((m.group(3), entry))
+                    # Several entries can share one PV label, for example a .h and a .c file.
+                    parent.pvs.append((label, entry))
+                if is_dir:
+                    walk(entry, parent)
                 continue
-            if not entry.is_dir():
+            if not is_dir and parent and found_kind == kind and num == parent.num and label == parent.label:
+                continue  # A file named after its own folder, such as dp1_map/dp1_map.go.
+            if found_kind != kind or not is_dir:
+                rep.error(f"{entry}: expected a {kind} folder, not a {found_kind} entry.")
                 continue
-            if m and m.group(1) == kind:
-                num = tuple(map(int, m.group(2).split("_")))
-                expected_depth = 1 if parent is None else len(parent.num) + 1
-                if len(num) != expected_depth or (parent and num[:-1] != parent.num):
-                    where = parent.name if parent else directory.name
-                    rep.error(f"{entry} is numbered {fmt(num)} but sits in {where}; nesting must follow numbering.")
-                    continue
-                if parent is None and directory != root:
-                    rep.error(f"{entry} is a top-level {kind} folder but is not directly inside {root}.")
-                    continue
-                if num in nodes:
-                    rep.error(f"{kind.upper()}{fmt(num)} appears twice: {nodes[num].path} and {entry}.")
-                    continue
-                node = Node(kind, num, m.group(3), entry)
-                nodes[num] = node
-                walk(entry, node)
-            elif m:
-                rep.error(f"{entry} is a {m.group(1)} folder inside {root}; it belongs in the other tree.")
-            else:
-                walk(entry, parent)
+            expected_parent = parent.path if parent else root
+            expected_num = parent.num if parent else ()
+            if entry.parent != expected_parent or num[:-1] != expected_num:
+                rep.error(f"{entry}: numbering and nesting must match directly inside {expected_parent}.")
+                continue
+            if num in nodes:
+                rep.error(f"duplicate {kind.upper()}{fmt(num)}: {nodes[num].path} and {entry}.")
+                continue
+            node = Node(kind, num, label, entry)
+            nodes[num] = node
+            walk(entry, node)
 
     walk(root, None)
     return nodes
 
 
-def iter_files(directory: Path):
-    for dirpath, dirnames, filenames in os.walk(directory):
-        dirnames[:] = sorted(d for d in dirnames if not d.startswith(".") and d not in SKIP_DIRS)
-        for name in sorted(filenames):
+def iter_files(directory: Path, rep: Report):
+    if symlink_component(directory) or not directory.is_dir():
+        return
+
+    def onerror(exc):
+        rep.error(f"skipped unreadable directory: {exc}")
+
+    for dirpath, dirnames, filenames in os.walk(directory, onerror=onerror, followlinks=False):
+        keep = []
+        for name in sorted(dirnames):
             path = Path(dirpath) / name
+            if name.startswith(".") or name in SKIP_DIRS:
+                continue
+            if path.is_symlink():
+                rep.error(f"skipped symlink: {path}")
+            else:
+                keep.append(name)
+        dirnames[:] = keep
+        for name in sorted(filenames):
+            if name.startswith("."):
+                continue
+            path = Path(dirpath) / name
+            if path.is_symlink():
+                rep.error(f"skipped symlink: {path}")
+                continue
             try:
+                if not path.is_file():
+                    rep.error(f"skipped non-regular path: {path}")
+                    continue
                 if path.stat().st_size > MAX_BYTES:
+                    rep.error(f"skipped oversize file: {path}")
                     continue
                 text = path.read_text(encoding="utf-8")
-            except (OSError, UnicodeDecodeError):
+            except (OSError, UnicodeError) as exc:
+                rep.error(f"skipped unreadable file {path}: {exc}")
                 continue
             yield path, text
 
 
-def owner_of(path: Path, nodes: dict) -> Node | None:
-    """Deepest node whose folder contains path."""
-    best = None
-    for node in nodes.values():
-        if node.path in path.parents and (best is None or len(node.num) > len(best.num)):
-            best = node
-    return best
-
-
-# ── Evidence collection ──────────────────────────────────────
+def owner_of(path: Path, nodes: dict):
+    matches = [node for node in nodes.values() if node.path in path.parents]
+    return max(matches, key=lambda node: len(node.num)) if matches else None
 
 
 @dataclass
-class Evidence:
-    row: Num  # FR number whose outcome may change
-    col: Num  # DP number whose change may affect it
+class Reference:
+    row: Num
+    col: Num
     where: str
 
 
-def collect(src: Path, tests: Path, dps: dict, frs: dict, rep: Report):
-    """Return off-diagonal evidence and the set of FR numbers with diagonal evidence."""
+def collect(src, tests, dps, frs, rep):
     if not dps:
-        return [], set()
+        return [], set(), [], []
     names = {node.name: num for num, node in dps.items()}
     token = re.compile(
-        r"(?<![A-Za-z0-9_])(" + "|".join(sorted(map(re.escape, names), key=len, reverse=True)) + r")(?![A-Za-z0-9_])"
+        rf"(?<![A-Za-z0-9_])(dp[0-9]+(?:_[0-9]+)*_{LABEL})(?![A-Za-z0-9_])"
     )
-    edges: list[Evidence] = []
-    diagonal: set = set()
 
-    def refs(text: str):
-        for i, line in enumerate(text.splitlines(), 1):
-            for m in token.finditer(line):
-                yield i, names[m.group(1)]
+    def refs(text, path):
+        for line, content in enumerate(text.splitlines(), 1):
+            found = set()
+            for match in token.finditer(content):
+                name = match.group(1)
+                if name not in names:
+                    rep.error(f"{path}:{line}: unknown DP token {name!r}.")
+                else:
+                    found.add(names[name])
+            # A path such as dp2_x/dp2_1_y names its parent only to reach the child.
+            for num in sorted(found):
+                if not any(other != num and is_prefix(num, other) for other in found):
+                    yield line, num
 
-    app, shared = src / "app", src / "shared"
-    for path, text in iter_files(src):
-        rel = path.relative_to(src.parent) if src.parent in path.parents else path
-        if app == path or app in path.parents:
-            for line, target in refs(text):
-                if len(target) > 1:
-                    rep.error(f"{rel}:{line} in app refers to nested {dps[target].name}; compose through its parent junction.")
-            continue
-        if shared == path or shared in path.parents:
-            for line, target in refs(text):
-                rep.error(f"{rel}:{line} in shared refers to {dps[target].name}; shared code must not depend on a DP.")
-            continue
+    source, paired, test_refs, observed = [], set(), [], []
+    for path, text in iter_files(src, rep):
         owner = owner_of(path, dps)
-        if owner is None:
-            rep.warn(f"{rel} is outside every dp folder, app, and shared.")
-            continue
-        for line, target in refs(text):
-            if is_prefix(owner.num, target):
-                continue  # own subtree: the parent's junction wires its children
-            if is_prefix(target, owner.num):
-                continue  # ancestor: contract of a decision fixed earlier
-            edges.append(Evidence(owner.num, target, f"{rel}:{line}"))
-
-    for path, text in iter_files(tests):
-        rel = path.relative_to(tests.parent) if tests.parent in path.parents else path
-        owner = owner_of(path, frs)
-        if owner is None:
-            continue  # change scenarios and helpers outside any fr folder are not a matrix row
-        for line, target in refs(text):
-            if is_prefix(owner.num, target):
-                diagonal.add(owner.num)
-            elif is_prefix(target, owner.num):
-                continue
+        for line, target in refs(text, path):
+            where = f"{path}:{line}"
+            # Files directly in the source root, such as src/lib.rs, compose like app/.
+            if src / "app" in path.parents or path.parent == src:
+                if len(target) > 1:
+                    rep.error(f"{where}: the composition root names nested {dps[target].name}. Compose it through its parent DP.")
+            elif src / "shared" in path.parents:
+                rep.error(f"{where}: shared names {dps[target].name}.")
+            elif owner:
+                observed.append(Reference(owner.num, target, where))
+                if not is_prefix(owner.num, target) and not is_prefix(target, owner.num):
+                    source.append(Reference(owner.num, target, where))
             else:
-                edges.append(Evidence(owner.num, target, f"{rel}:{line}"))
-    # Parent diagonals: any test below fr<N> that reaches below dp<N>.
-    for num in list(diagonal):
-        for k in range(1, len(num)):
-            diagonal.add(num[:k])
-    return edges, diagonal
+                rep.error(f"{where}: a DP name sits outside a DP folder, app/, or the source root.")
+    for path, text in iter_files(tests, rep):
+        owner = owner_of(path, frs)
+        for line, target in refs(text, path):
+            if owner:
+                test_refs.append(Reference(owner.num, target, f"{path}:{line}"))
+                if is_prefix(owner.num, target):
+                    paired.add(owner.num)
+    # A descendant's exact paired token also supplies a parent-scope token.
+    for num in list(paired):
+        paired.update(num[:depth] for depth in range(1, len(num)))
+    return source, paired, test_refs, observed
 
 
-def related_row(evidence_row: Num, row: Num) -> bool:
-    return is_prefix(row, evidence_row) or is_prefix(evidence_row, row)
+def leaves(nodes):
+    return [num for num in sorted(nodes) if not any(
+        len(other) > len(num) and is_prefix(num, other) for other in nodes
+    )]
 
 
-def cell_evidence(edges, row: Num, col: Num):
-    found, seen = [], set()
-    for e in edges:
-        if related_row(e.row, row) and is_prefix(col, e.col) and e.where not in seen:
-            seen.add(e.where)
-            found.append(e)
-    return found
-
-
-# ── Matrices ─────────────────────────────────────────────────
-
-
-def sibling_sets(dps: dict) -> dict:
-    sets: dict = {}
-    for num in sorted(dps):
-        sets.setdefault(num[:-1], []).append(num)
-    return sets
-
-
-def leaves(dps: dict) -> list:
-    return [n for n in sorted(dps) if not any(len(m) > len(n) and is_prefix(n, m) for m in dps)]
-
-
-def classify(axis: list, off: dict) -> tuple:
-    """off maps (row, col) to evidence. Return (classification, order)."""
-    if not off:
-        return "uncoupled", axis
-    before = {n: set() for n in axis}  # col must precede row
-    for row, col in off:
-        before[row].add(col)
+def pattern(axis, edges):
+    before = {num: set() for num in axis}
+    for row, col in edges:
+        if row != col:
+            before[row].add(col)
     order, done = [], set()
     while len(order) < len(axis):
-        ready = [n for n in axis if n not in done and before[n] <= done]
+        ready = [num for num in axis if num not in done and before[num] <= done]
         if not ready:
-            return "coupled", []
+            return "cyclic", []
         order.append(ready[0])
         done.add(ready[0])
-    return "decoupled", order
+    return ("acyclic" if any(before.values()) else "diagonal"), order
 
 
-def render(title: str, axis: list, off: dict, diagonal: set) -> list:
-    cols = [f"DP{fmt(n)}" for n in axis]
-    width = max([len(c) for c in cols] + [5])
-    rowh = max(len(f"FR{fmt(n)}") for n in axis)
-    lines = [title, " " * (rowh + 2) + " ".join(c.rjust(width) for c in cols)]
-    for r in axis:
-        cells = []
-        for c in axis:
-            if r == c:
-                cells.append("X" if r in diagonal else "?")
-            else:
-                cells.append("X" if (r, c) in off else "0")
-        lines.append(f"FR{fmt(r)}".ljust(rowh + 2) + " ".join(v.rjust(width) for v in cells))
-    return lines
+def render_scope(title, axis, source, paired, complete, rep, expect):
+    # Project descendants upward. Never project a parent token into leaf facts.
+    def place(num):
+        inside = [member for member in axis if is_prefix(member, num)]
+        if inside:
+            return inside[0]
+        # A strict ancestor of a member sits above this scope's level.
+        return "above" if any(is_prefix(num, member) for member in axis) else None
+
+    cells = {}
+    unresolved = []
+    for ref in source:
+        row, col = place(ref.row), place(ref.col)
+        if row is None or col is None:
+            continue  # The reference belongs to another scope.
+        if "above" in (row, col):
+            unresolved.append(ref)
+        elif row != col:
+            cells.setdefault((row, col), []).append(ref)
+    graph, order = pattern(axis, cells)
+    missing = [num for num in axis if num not in paired]
+    result = graph if complete and not missing and not unresolved else "incomplete"
+    width = max([len("DP" + fmt(num)) for num in axis] + [5])
+    row_width = max([len("FR" + fmt(num)) for num in axis] + [5])
+    out = [title, " " * (row_width + 2) + " ".join(
+        ("DP" + fmt(num)).rjust(width) for num in axis
+    )]
+    for row in axis:
+        values = [
+            ("T" if row in paired else "?") if row == col
+            else ("R" if (row, col) in cells else ".")
+            for col in axis
+        ]
+        out.append(("FR" + fmt(row)).ljust(row_width + 2) + " ".join(
+            value.rjust(width) for value in values
+        ))
+    out.append(f"reference pattern: {result}" + (f"; observed graph: {graph}" if result == "incomplete" else ""))
+    if graph == "acyclic":
+        out.append("DP order: " + ", ".join("DP" + fmt(num) for num in order))
+    for (row, col), refs in sorted(cells.items()):
+        out.append(f"  FR{fmt(row)} <- DP{fmt(col)}: " + ", ".join(dict.fromkeys(ref.where for ref in refs)))
+    for ref in unresolved:
+        out.append(f"  unresolved parent scope: FR{fmt(ref.row)} <- DP{fmt(ref.col)} at {ref.where}")
+    if expect == "decoupled" and graph == "cyclic":
+        rep.error(f"{title}: source-reference cycle violates --expect decoupled.")
+    return out + [""]
 
 
-# ── Minimal .ad.hcl reader ───────────────────────────────────
+# This is a static syntax reader, not a second ADHCL assessor.
+FIELDS = {
+    "design": "boundary level workload",
+    "source": "title doi url pages",
+    "stakeholder": "role",
+    "need": "statement why stakeholder",
+    "constraint": "statement kind",
+    "assumption": "statement status",
+    "context": "description assumes excludes workload",
+    "workload": "description ranges",
+    "state": "description",
+    "fr": "statement need parent bounded_by alias",
+    "criterion": "statement metric op value unit under allocated_from",
+    "dp": "controls responsibility decision why role owns_state reads_state bounded_by holds_if alias",
+    "pv": "realizes kind address note alias",
+    "influence": "from to effect mechanism because mechanism_source source under holds_if",
+    "cells": "scope unlisted because",
+    "coupling": "scope affects reason condition decision normal_practice residual_risk iteration_bound convergence stopping failure_behavior",
+    "module": "realizes contains within inputs outputs owns_state dependencies invariants failure_behavior acceptance_checks alias",
+    "flow": "steps owner input output after",
+    "loop": "after back_to when bound",
+    "scenario": "kind verifies vary expect_affected expect_unaffected steps description under",
+    "expect": "scope classification order basis under",
+}
+# Child block kinds by parent kind. Every other block is top-level only.
+CHILDREN = {"fr": "criterion", "flow": "loop"}
+UNNAMED = {"influence", "loop"}
 
 
-def strip_hcl(text: str) -> str:
-    """Blank comments and string contents so that braces can be counted."""
-    out, i, n = [], 0, len(text)
-    while i < n:
-        c = text[i]
-        if c == "#" or text.startswith("//", i):
-            j = text.find("\n", i)
-            j = n if j < 0 else j
-            out.append(" " * (j - i))
-            i = j
-        elif text.startswith("/*", i):
-            j = text.find("*/", i + 2)
-            j = n if j < 0 else j + 2
-            out.append(re.sub(r"[^\n]", " ", text[i:j]))
-            i = j
-        elif c == '"':
-            j = i + 1
-            while j < n and text[j] != '"':
-                j += 2 if text[j] == "\\" else 1
-            if j >= n:  # unterminated: blank the rest, keep the length
-                out.append(re.sub(r"[^\n]", " ", text[i:]))
-                break
-            out.append('"' + re.sub(r"[^\n]", " ", text[i + 1 : j]) + '"')
-            i = j + 1
-        elif text.startswith("<<", i) and (m := re.match(r"<<-?([A-Za-z_]+)\n", text[i:])):
-            end = re.search(rf"^\s*{m.group(1)}\s*$", text[i + m.end() :], re.M)
-            j = n if end is None else i + m.end() + end.end()
-            out.append(re.sub(r"[^\n]", " ", text[i:j]))
-            i = j
-        else:
-            out.append(c)
-            i += 1
-    return "".join(out)
+class SpecError(ValueError):
+    pass
 
 
-def read_spec(path: Path) -> list:
-    """Return top-level blocks as (type, label, body text) from a file or directory."""
-    files = sorted(path.glob("*.ad.hcl")) if path.is_dir() else [path]
-    files = [f for f in files if not f.name.endswith((".ad.ext.hcl", ".ad.project.hcl"))]
-    blocks = []
-    header = re.compile(r'([a-z_]+)(?:\s+"( *)")?\s*\{')
-    for f in files:
-        text = f.read_text(encoding="utf-8")
-        masked = strip_hcl(text)
-        i = 0
-        while i < len(masked):
-            if masked[i].isspace():
-                i += 1
-                continue
-            m = header.match(masked, i)
-            if not m:  # not a block header at depth 0: skip to the next line
-                nl = masked.find("\n", i)
-                i = len(masked) if nl < 0 else nl + 1
-                continue
-            depth, j = 0, m.end() - 1
-            while j < len(masked):
-                depth += {"{": 1, "}": -1}.get(masked[j], 0)
-                if depth == 0:
+@dataclass(frozen=True)
+class Ref:
+    value: str
+
+
+@dataclass
+class Block:
+    kind: str
+    label: str | None
+    attrs: dict
+    children: list
+    where: str
+
+
+class StaticReader:
+    TOKEN = re.compile(
+        r'(?P<space>[ \t\r]+)|(?P<newline>\n)|(?P<comment>\#[^\n]*|//[^\n]*|/\*.*?\*/)'
+        r'|(?P<string>"(?:[^"\\\n]|\\.)*")|(?P<number>-?[0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?)'
+        r'|(?P<name>[a-z][a-z0-9_]*)|(?P<punct>[{}=\[\],.])',
+        re.S,
+    )
+
+    def __init__(self, text, path):
+        self.path = path
+        self.tokens = []
+        offset = 0
+        line = 1
+        while offset < len(text):
+            match = self.TOKEN.match(text, offset)
+            if not match:
+                raise SpecError(f"{path}:{line}: unsupported or malformed static syntax near {text[offset:offset + 24]!r}.")
+            kind, value = match.lastgroup, match.group()
+            if kind not in {"space", "comment"}:
+                self.tokens.append((kind, value, line))
+            offset = match.end()
+            line += value.count("\n")
+        self.tokens.append(("end", "", line))
+        self.i = 0
+
+    def at(self, value):
+        return self.tokens[self.i][1] == value
+
+    def take(self, value=None, kind=None):
+        token = self.tokens[self.i]
+        if (value is not None and token[1] != value) or (kind is not None and token[0] != kind):
+            self.fail(f"expected {value or kind}, got {token[1]!r}")
+        self.i += 1
+        return token[1]
+
+    def fail(self, message):
+        raise SpecError(f"{self.path}:{self.tokens[self.i][2]}: {message}.")
+
+    def newlines(self):
+        while self.tokens[self.i][0] == "newline":
+            self.i += 1
+
+    def value(self):
+        kind, value, _ = self.tokens[self.i]
+        if kind == "string":
+            self.i += 1
+            if "${" in value or "%{" in value:
+                self.fail("templates are not supported")
+            try:
+                return json.loads(value)
+            except ValueError:
+                self.fail("unsupported quoted string escape")
+        if self.at("{"):
+            self.take("{")
+            result = {}
+            self.newlines()
+            while not self.at("}"):
+                kind = self.tokens[self.i][0]
+                if kind == "string":
+                    key = self.value()
+                elif kind == "name":
+                    key = self.take(kind="name")
+                else:
+                    self.fail("object keys need literal strings or identifiers")
+                if key in result:
+                    self.fail(f"duplicate object key {key!r}")
+                self.take("=")
+                result[key] = self.value()
+                if self.at(","):
+                    self.take(",")
+                elif not self.at("}") and self.tokens[self.i][0] != "newline":
+                    self.fail("object items need a comma or separate lines")
+                self.newlines()
+            self.take("}")
+            return result
+        if self.at("["):
+            self.take("[")
+            items = []
+            self.newlines()
+            while not self.at("]"):
+                items.append(self.value())
+                self.newlines()
+                if self.at("]"):
                     break
-                j += 1
-            label = text[m.start(2) : m.end(2)] if m.group(2) is not None else None
-            body, masked_body = text[m.end() : j], masked[m.end() : j]
-            # keep only top-level attributes: blank nested blocks
-            flat = masked_body
-            while re.search(r"\{[^{}]*\}", flat):
-                flat = re.sub(r"\{[^{}]*\}", lambda b: " " * len(b.group(0)), flat)
-            blocks.append((m.group(1), label, body, flat))
-            i = j + 1
+                self.take(",")
+                self.newlines()
+            self.take("]")
+            return items
+        if kind == "number":
+            self.i += 1
+            return ("number", value)
+        if kind == "name":
+            name = self.take(kind="name")
+            if name in {"true", "false"}:
+                return name == "true"
+            if not self.at("."):
+                self.fail("only literal values and static traversals are supported")
+            while self.at("."):
+                self.take(".")
+                name += "." + self.take(kind="name")
+            return Ref(name)
+        self.fail("unsupported value")
+
+    def block(self, parent=None):
+        where = f"{self.path}:{self.tokens[self.i][2]}"
+        kind = self.take(kind="name")
+        if kind not in FIELDS or (parent and CHILDREN.get(parent) != kind) or (not parent and kind in CHILDREN.values()):
+            self.fail(f"unsupported block {kind!r}")
+        label = None if kind in UNNAMED else self.take(kind="string")
+        if label is not None:
+            try:
+                label = json.loads(label)
+            except ValueError:
+                self.fail("invalid block label")
+            if not re.fullmatch(LABEL, label):
+                self.fail("invalid block label")
+        self.take("{")
+        attrs, children = {}, []
+        self.newlines()
+        while not self.at("}"):
+            if self.tokens[self.i][0] == "end":
+                self.fail("unclosed block")
+            if self.tokens[self.i][0] != "name":
+                self.fail("expected an attribute or supported child block")
+            if self.tokens[self.i + 1][1] != "=":
+                children.append(self.block(kind))
+            else:
+                name = self.take(kind="name")
+                allowed = set(FIELDS[kind].split())
+                if kind != "source":
+                    allowed.update(("cites", "origin"))
+                if name not in allowed:
+                    self.fail(f"unsupported field {kind}.{name}")
+                if name in attrs:
+                    self.fail(f"duplicate attribute {name}")
+                self.take("=")
+                attrs[name] = self.value()
+                if self.tokens[self.i][0] != "newline" and not self.at("}"):
+                    self.fail("separate attributes need separate lines")
+            self.newlines()
+        self.take("}")
+        return Block(kind, label, attrs, children, where)
+
+    def read(self):
+        blocks = []
+        self.newlines()
+        while self.tokens[self.i][0] != "end":
+            blocks.append(self.block())
+            self.newlines()
+        if not blocks:
+            self.fail("empty spec input")
+        return blocks
+
+
+def read_spec(path):
+    link = symlink_component(path)
+    if link:
+        raise SpecError(f"skipped symlink spec: {link}")
+    files = sorted(path.glob("*.ad.hcl")) if path.is_dir() else [path]
+    if path.is_dir():
+        excluded = sorted(path.glob("*.ad.project.hcl")) + sorted(path.glob("*.ad.ext.hcl"))
+        if excluded:
+            raise SpecError(f"unsupported manifest or attachment in spec input: {excluded[0]}")
+    if not files:
+        raise SpecError(f"empty spec directory: {path}")
+    blocks = []
+    for file in files:
+        if file.name.endswith((".ad.project.hcl", ".ad.ext.hcl")):
+            raise SpecError(f"unsupported manifest or attachment spec: {file}")
+        if file.is_symlink():
+            raise SpecError(f"skipped symlink spec: {file}")
+        if not file.name.endswith(".ad.hcl"):
+            raise SpecError(f"spec input needs a .ad.hcl core file: {file}")
+        if file.stat().st_size > MAX_BYTES:
+            raise SpecError(f"skipped oversize spec: {file}")
+        blocks.extend(StaticReader(file.read_text(encoding="utf-8"), file).read())
     return blocks
 
 
-def attr_raw(body: str, flat: str, name: str):
-    m = re.search(rf"^\s*{name}\s*=", flat, re.M)
-    if not m:
-        return None
-    start, depth, j = m.end(), 0, m.end()
-    while j < len(flat):
-        ch = flat[j]
-        depth += {"[": 1, "(": 1, "]": -1, ")": -1}.get(ch, 0)
-        if ch == "\n" and depth <= 0:
-            break
-        j += 1
-    return body[start:j].strip()
+def check_spec(spec, root, src, tests, dps, frs, source, rep, expect=None):
+    try:
+        blocks = read_spec(spec)
+        identities = {}
+        for block in blocks:
+            if block.label is not None:
+                identity = block.kind + "." + block.label
+                if identity in identities:
+                    raise SpecError(f"{block.where}: duplicate label {identity}.")
+                identities[identity] = block
+            for child in (child for child in block.children if child.label is not None):
+                identity = f"{block.kind}.{block.label}.{child.kind}.{child.label}"
+                if identity in identities:
+                    raise SpecError(f"{child.where}: duplicate label {identity}.")
+                identities[identity] = child
+        if sum(block.kind == "design" for block in blocks) != 1:
+            raise SpecError("spec needs exactly one design block.")
 
+        def all_refs(value):
+            if isinstance(value, Ref):
+                yield value.value
+            elif isinstance(value, list):
+                for item in value:
+                    yield from all_refs(item)
+            elif isinstance(value, dict):
+                for item in value.values():
+                    yield from all_refs(item)
 
-def attr_str(body, flat, name):
-    raw = attr_raw(body, flat, name)
-    m = re.fullmatch(r'"((?:[^"\\]|\\.)*)"', raw or "")
-    return m.group(1) if m else None
+        for block in identities.values():
+            for value in block.attrs.values():
+                for target in all_refs(value):
+                    if target not in identities:
+                        raise SpecError(f"{block.where}: unresolved reference {target}.")
+        for block in blocks:
+            if block.kind == "influence":
+                for value in block.attrs.values():
+                    for target in all_refs(value):
+                        if target not in identities:
+                            raise SpecError(f"{block.where}: unresolved reference {target}.")
 
+        def string(block, name, required=False):
+            value = block.attrs.get(name)
+            if value is None and not required:
+                return None
+            if not isinstance(value, str) or not value.strip():
+                raise SpecError(f"{block.where}: {block.kind}.{name} needs a nonblank literal string.")
+            return value
 
-def attr_refs(body, flat, kind, name):
-    raw = attr_raw(body, flat, name) or ""
-    return re.findall(rf"\b{kind}\.({LABEL})\b", raw)
+        required_strings = {
+            "design": ("boundary",), "source": ("title",),
+            "stakeholder": ("role",), "need": ("statement",),
+            "constraint": ("statement",), "assumption": ("statement",),
+            "context": ("description",), "workload": ("description",),
+            "state": ("description",), "fr": ("statement",),
+        }
+        for block in blocks:
+            for name in required_strings.get(block.kind, ()):
+                string(block, name, True)
 
+        def refs(block, name, kind, single=False, required=False):
+            value = block.attrs.get(name)
+            if value is None and not required:
+                return []
+            values = [value] if single else value
+            kinds = kind.split("|")
+            if not isinstance(values, list) or not values or any(
+                not isinstance(item, Ref) or item.value.split(".")[0] not in kinds
+                or len(item.value.split(".")) != 2 for item in values
+            ):
+                raise SpecError(f"{block.where}: {block.kind}.{name} needs {'one reference' if single else 'a nonempty reference list'} to {kind}.")
+            targets = [item.value for item in values]
+            if len(targets) != len(set(targets)):
+                raise SpecError(f"{block.where}: duplicate reference in {name}.")
+            return targets
 
-def check_spec(spec: Path, root: Path, src: Path, tests: Path, dps: dict, frs: dict, edges, rep: Report) -> None:
-    blocks = read_spec(spec)
-    fr_spec, dp_spec, pv_spec, infl = {}, {}, [], []
-    for kind, label, body, flat in blocks:
-        if kind == "fr":
-            fr_spec[label] = dict(alias=attr_str(body, flat, "alias"), parent=(attr_refs(body, flat, "dp", "parent") or [None])[0])
-        elif kind == "dp":
-            dp_spec[label] = dict(
-                alias=attr_str(body, flat, "alias"),
-                controls=attr_refs(body, flat, "fr", "controls"),
-                decision=attr_str(body, flat, "decision"),
-            )
-        elif kind == "pv":
-            pv_spec.append((label, attr_refs(body, flat, "dp", "realizes"), attr_str(body, flat, "address")))
-        elif kind == "influence":
-            infl.append((attr_refs(body, flat, "dp", "from"), (attr_refs(body, flat, "fr", "to") or [None])[0], attr_str(body, flat, "effect")))
-
-    active_dp = {k for k, v in dp_spec.items() if v["decision"] == "selected"}
-    active_fr = set()
-    for label, v in fr_spec.items():
-        if v["parent"] is None or v["parent"] in active_dp:
-            active_fr.add(label)
-
-    def number(kind, label, alias):
-        m = ALIAS_RE.match(alias or "")
-        if not m or m.group(1) != kind.upper():
-            rep.error(f"{kind}.{label} has alias {alias!r}; the layout needs an alias such as {kind.upper()}2.1.")
-            return None
-        return tuple(map(int, m.group(2).split(".")))
-
-    fr_num = {k: number("fr", k, fr_spec[k]["alias"]) for k in sorted(active_fr)}
-    dp_num = {k: number("dp", k, dp_spec[k]["alias"]) for k in sorted(active_dp)}
-
-    for label in sorted(active_dp):
-        num, controls = dp_num[label], dp_spec[label]["controls"]
-        if num is None:
-            continue
-        if len(controls) != 1:
-            rep.error(f"dp.{label} controls {len(controls)} FRs; the layout pairs one DP folder with one FR folder.")
-        elif fr_num.get(controls[0]) not in (None, num):
-            rep.error(f"dp.{label} is DP{fmt(num)} but controls FR{fmt(fr_num[controls[0]])}; numbers must pair.")
-        parent = fr_spec.get(controls[0], {}).get("parent") if controls else None
-        if parent and dp_num.get(parent) is not None and dp_num[parent] != num[:-1]:
-            rep.error(f"dp.{label} is DP{fmt(num)} but its parent is DP{fmt(dp_num[parent])}.")
-
-    for kind, spec_nums, found, base in (("dp", dp_num, dps, src), ("fr", fr_num, frs, tests)):
-        by_num = {n: k for k, n in spec_nums.items() if n is not None}
-        for num, label in sorted(by_num.items()):
-            node = found.get(num)
-            if node is None:
-                rep.error(f"{kind}.{label} ({kind.upper()}{fmt(num)}) has no folder {kind}{'_'.join(map(str, num))}_{label} in {base}.")
-            elif node.label != label:
-                rep.error(f"{node.path} is named {node.label}, but {kind.upper()}{fmt(num)} is {kind}.{label} in the spec.")
-        for num, node in sorted(found.items()):
-            if num not in by_num:
-                rep.error(f"{node.path} has no active {kind.upper()}{fmt(num)} in the spec.")
-
-    expected_pvs: dict = {}
-    for label, realizes, address in pv_spec:
-        targets = [d for d in realizes if d in active_dp]
-        if not targets:
-            continue
-        if len(realizes) != 1:
-            rep.error(f"pv.{label} realizes {len(realizes)} DPs; the layout places each PV inside one DP folder.")
-            continue
-        num = dp_num.get(targets[0])
-        node = dps.get(num) if num else None
-        if node is None:
-            continue
-        expected_pvs.setdefault(num, set()).add(label)
-        hits = [p for pl, p in node.pvs if pl == label]
-        if not hits:
-            rep.error(f"pv.{label} has no entry pv{'_'.join(map(str, num))}_{label} in {node.path}.")
-        elif address:
-            actual = {str(p.relative_to(root)) if root in p.parents else str(p) for p in hits}
-            actual |= {str(Path(a).with_suffix("")) for a in actual}
-            if address.rstrip("/") not in actual:
-                rep.error(f"pv.{label} has address {address!r}, but the layout has {sorted(actual)[0]!r}.")
-    for num, node in sorted(dps.items()):
-        for pl, p in node.pvs:
-            if pl not in expected_pvs.get(num, set()):
-                rep.error(f"{p} is not a pv of dp.{node.label} in the spec.")
-
-    # Compare code evidence with authored influences.
-    claims: dict = {}
-    for froms, to, effect in infl:
-        if to not in fr_num or fr_num[to] is None:
-            continue
-        for d in froms:
-            if dp_num.get(d) is not None:
-                claims[(fr_num[to], dp_num[d])] = effect
-    for (row, col), effect in sorted(claims.items()):
-        if row == col:
-            continue
-        found = cell_evidence(edges, row, col)
-        if effect == "none" and found:
-            where = ", ".join(e.where for e in found[:3])
-            rep.error(f"The spec says DP{fmt(col)} has no effect on FR{fmt(row)}, but code refers across: {where}.")
-        elif effect == "material" and not found:
-            rep.note(f"The spec says DP{fmt(col)} affects FR{fmt(row)}; no code reference shows it (data or runtime path).")
-    for e in edges:
-        if not any(
-            related_row(e.row, row) and is_prefix(col, e.col) and claims[(row, col)] != "unknown"
-            for row, col in claims
+        fr_blocks = {key: block for key, block in identities.items() if block.kind == "fr"}
+        dp_blocks = {key: block for key, block in identities.items() if block.kind == "dp"}
+        parents = {key: refs(block, "parent", "dp", single=True) for key, block in fr_blocks.items()}
+        controls = {key: refs(block, "controls", "fr", required=True) for key, block in dp_blocks.items()}
+        active_dp = set()
+        for key, block in dp_blocks.items():
+            decision = string(block, "decision", True)
+            if decision not in {"selected", "proposed", "rejected", "superseded"}:
+                raise SpecError(f"{block.where}: unsupported DP decision {decision!r}.")
+            string(block, "responsibility", True)
+            if decision == "selected":
+                active_dp.add(key)
+        active_fr = {key for key, parent in parents.items() if not parent or parent[0] in active_dp}
+        pv_targets = {
+            "pv." + block.label: refs(block, "realizes", "dp", required=True)
+            for block in blocks if block.kind == "pv"
+        }
+        active_pv = {
+            key for key, targets in pv_targets.items()
+            if any(target in active_dp for target in targets)
+        }
+        active_identities = active_fr | active_dp | active_pv
+        numbers, used = {}, {}
+        for key, block in identities.items():
+            if key not in active_identities:
+                continue
+            alias = string(block, "alias")
+            match = ALIAS_RE.fullmatch(alias or "")
+            if not match or match[1].lower() != block.kind:
+                raise SpecError(f"{block.where}: {key} needs a numbered {block.kind.upper()} alias for this layout profile.")
+            num = tuple(map(int, match[2].split(".")))
+            alias_key = (block.kind, num)
+            if block.kind != "pv":
+                if alias_key in used:
+                    raise SpecError(f"{block.where}: duplicate numbered alias {alias} for {key} and {used[alias_key]}.")
+                used[alias_key] = key
+            numbers[key] = num
+        for key in active_dp:
+            num = numbers[key]
+            targets = controls[key]
+            if len(targets) != 1 or targets[0] not in active_fr or numbers[targets[0]] != num:
+                raise SpecError(f"{key}: selected DP needs one active FR with the same number.")
+            parent = parents[targets[0]]
+            if (parent and numbers[parent[0]] != num[:-1]) or (not parent and len(num) != 1):
+                raise SpecError(f"{key}: numbered parent does not match the controlled FR parent.")
+        for kind, active, found, base in (
+            ("dp", active_dp, dps, src), ("fr", active_fr, frs, tests)
         ):
-            rep.warn(f"{e.where}: FR{fmt(e.row)} code refers to DP{fmt(e.col)}, and the spec states no effect for that cell.")
+            expected = {numbers[key]: key.split(".")[1] for key in active}
+            for num, label in sorted(expected.items()):
+                if num not in found or found[num].label != label:
+                    rep.error(f"spec {kind}.{label}: missing or renamed {kind.upper()}{fmt(num)} folder in {base}.")
+            for num, node in found.items():
+                if num not in expected:
+                    rep.error(f"{node.path}: no active {kind.upper()}{fmt(num)} in spec.")
+        expected_pvs = {}
+        for block in blocks:
+            if block.kind != "pv":
+                continue
+            key = "pv." + block.label
+            targets = pv_targets[key]
+            if key not in active_pv:
+                continue
+            if len(targets) != 1:
+                raise SpecError(f"{key}: this layout needs exactly one realized DP.")
+            num = numbers[targets[0]]
+            if numbers[key] != num:
+                raise SpecError(f"{key}: PV{fmt(numbers[key])} number differs from realized DP{fmt(num)}.")
+            expected_pvs.setdefault(num, set()).add(block.label)
+            node = dps.get(num)
+            hits = [path for label, path in node.pvs if label == block.label] if node else []
+            if not hits:
+                rep.error(f"spec {key}: no matching PV entry inside DP{fmt(num)}.")
+            address = string(block, "address")
+            if hits and address:
+                actual = {str(path.relative_to(root)) if root in path.parents else str(path) for path in hits}
+                actual.update(str(Path(path).with_suffix("")) for path in list(actual))
+                if address.rstrip("/") not in actual:
+                    rep.error(f"spec {key}: address {address!r} does not match {hits[0]}.")
+        for num, node in dps.items():
+            for label, path in node.pvs:
+                if label not in expected_pvs.get(num, set()):
+                    rep.error(f"{path}: PV entry has no active spec record.")
 
+        def premises(block):
+            return refs(block, "holds_if", "assumption") if block.attrs.get("holds_if") != [] else []
 
-# ── Main ─────────────────────────────────────────────────────
+        # Each claim is (dp key, fr key, effect, conditions).
+        claims = []
+        for block in blocks:
+            if block.kind != "influence":
+                continue
+            froms = refs(block, "from", "dp", required=True)
+            target = refs(block, "to", "fr", single=True, required=True)[0]
+            effect = string(block, "effect", True)
+            if effect not in {"none", "material", "unknown"}:
+                raise SpecError(f"{block.where}: invalid influence effect {effect!r}.")
+            if effect in {"none", "material"}:
+                string(block, "because" if effect == "none" else "mechanism", True)
+            under = refs(block, "under", "context|workload", single=True)
+            for origin in froms:
+                conditions = list(dict.fromkeys(under + premises(block) + premises(dp_blocks[origin])))
+                claims.append((origin, target, effect, conditions))
+        explicit = {(origin, target) for origin, target, _, _ in claims}
+        for block in blocks:
+            if block.kind != "cells":
+                continue
+            scope = refs(block, "scope", "design|dp", single=True, required=True)[0]
+            unlisted = string(block, "unlisted", True)
+            if unlisted not in {"none", "unknown"}:
+                raise SpecError(f"{block.where}: invalid cells default {unlisted!r}.")
+            if unlisted == "none":
+                string(block, "because", True)
+            owner = None if scope.startswith("design.") else scope
+            set_frs = [key for key, parent in parents.items() if (parent[0] if parent else None) == owner]
+            set_dps = [key for key, targets in controls.items() if set(targets) & set(set_frs)]
+            claims += [
+                (origin, target, unlisted, premises(dp_blocks[origin]))
+                for origin in set_dps for target in set_frs if (origin, target) not in explicit
+            ]
+
+        # A reference supports its own cell and every ancestor cell.
+        def covers(cell, ref):
+            return is_prefix(cell[0], ref.row) and is_prefix(cell[1], ref.col)
+
+        cells, inactive = {}, 0
+        for origin, target, effect, conditions in claims:
+            if origin not in active_dp or target not in active_fr:
+                inactive += 1
+                continue
+            cells.setdefault((numbers[target], numbers[origin]), []).append((effect, conditions))
+        for (row, col), entries in sorted(cells.items()):
+            hits = [ref for ref in source if covers((row, col), ref)]
+            zeros = ["; ".join(conditions) or "unconditional" for effect, conditions in entries if effect == "none"]
+            cell = f"FR{fmt(row)} <- DP{fmt(col)}"
+            if hits and zeros:
+                message = (f"the model states zero for {cell} ({' | '.join(zeros)}), "
+                           f"but {hits[0].where} names DP{fmt(hits[0].col)}.")
+                if expect:
+                    rep.error(f"{message} This violates --expect {expect}. Remove the reference, or change the design with the user's approval.")
+                else:
+                    rep.warn(f"REVIEW WARNING: {message} Review the effect under those conditions.")
+            elif not hits and any(effect == "material" for effect, _ in entries) and not (
+                    is_prefix(row, col) or is_prefix(col, row)):
+                rep.note(f"the model states a material effect for {cell}, but no code reference shows it. The effect can use data or a shared resource.")
+        for ref in source:
+            if not any(covers(cell, ref) for cell in cells):
+                rep.warn(f"{ref.where}: code for DP{fmt(ref.row)} names DP{fmt(ref.col)}, but the model has no influence record for FR{fmt(ref.row)} <- DP{fmt(ref.col)} or an ancestor cell.")
+        if inactive:
+            rep.note(f"{inactive} influence claims name an inactive DP or FR. They were not compared.")
+        retained = sorted({block.kind for block in blocks if block.kind in {"expect", "coupling", "module", "flow", "scenario"}})
+        if retained:
+            rep.note(f"The comparison did not assess these block kinds: {', '.join(retained)}.")
+        rep.note("Spec limits: conditions and premises are not resolved. Unknown claims remain unknown. Support is not assessed. Full HCL and ADHCL validation did not run.")
+    except (SpecError, OSError, UnicodeError, RecursionError) as exc:
+        rep.error(f"spec comparison stopped: {exc}")
 
 
 def main(argv: list) -> int:
-    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--root", default=".", help="project root; pv addresses are relative to it")
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--root", default=".", help="project root; PV addresses are relative to it")
     parser.add_argument("--src", help="source root (default ROOT/src)")
     parser.add_argument("--tests", help="test root (default ROOT/tests)")
-    parser.add_argument("--spec", help="a .ad.hcl file or a directory of them")
-    parser.add_argument("--expect", choices=["uncoupled", "decoupled"], help="fail when a scope is worse")
-    try:
-        args = parser.parse_args(argv)
-    except SystemExit as exc:
-        return 0 if exc.code == 0 else 2
-    root = Path(args.root).resolve()
-    src = Path(args.src).resolve() if args.src else root / "src"
-    tests = Path(args.tests).resolve() if args.tests else root / "tests"
-    if not src.is_dir():
-        print(f"error: source root {src} is not a directory", file=sys.stderr)
-        return 2
-    if args.spec and not Path(args.spec).exists():
-        print(f"error: spec {args.spec} does not exist", file=sys.stderr)
-        return 2
-
+    parser.add_argument("--spec", help="restricted static core file or directory; not full HCL validation")
+    parser.add_argument("--expect", choices=["uncoupled", "decoupled"], help="structural policy taken from the model's classification")
+    args = parser.parse_args(argv)
+    # Keep lexical paths so root symlinks remain visible to the scanner.
+    root = Path(os.path.abspath(args.root))
+    src = Path(os.path.abspath(args.src)) if args.src else root / "src"
+    tests = Path(os.path.abspath(args.tests)) if args.tests else root / "tests"
     rep = Report()
     dps = discover(src, "dp", rep)
     frs = discover(tests, "fr", rep)
+    if not dps or not frs:
+        rep.error("empty DP or FR inventory. The reference pattern is incomplete.")
     for num in sorted(set(dps) - set(frs)):
-        rep.warn(f"DP{fmt(num)} has no paired tests/fr{'_'.join(map(str, num))}_* folder.")
+        rep.error(f"DP{fmt(num)} has no paired FR test folder.")
     for num in sorted(set(frs) - set(dps)):
-        rep.error(f"FR{fmt(num)} has no paired src/dp{'_'.join(map(str, num))}_* folder: uncontrolled requirement.")
+        rep.error(f"FR{fmt(num)} has no paired DP source folder.")
     for num in leaves(dps):
         if not dps[num].pvs:
-            rep.warn(f"{dps[num].name} is a leaf DP with no pv entry.")
-    edges, diagonal = collect(src, tests, dps, frs, rep)
-
-    out = [f"Layout: {src}  tests: {tests}", ""]
-    order_rank = {"uncoupled": 0, "decoupled": 1, "coupled": 2}
-    scopes = [(f"Scope {'design root' if not p else 'DP' + fmt(p)}", axis) for p, axis in sibling_sets(dps).items()]
-    master = leaves(dps)
-    if len(master) > 1 and len(scopes) > 1:
-        scopes.append(("Scope master (leaf FRs by leaf DPs)", master))
-    for title, axis in scopes:
-        off = {}
-        for r in axis:
-            for c in axis:
-                if r != c and cell_evidence(edges, r, c):
-                    off[(r, c)] = cell_evidence(edges, r, c)
-        cls, order = classify(axis, off)
-        out += render(title, axis, off, diagonal)
-        detail = f"structural classification: {cls}"
-        if cls == "decoupled":
-            detail += "; DP order: " + ", ".join(f"DP{fmt(n)}" for n in order)
-        out.append(detail)
-        for (r, c), ev in sorted(off.items()):
-            out.append(f"  FR{fmt(r)} <- DP{fmt(c)}: " + ", ".join(e.where for e in ev[:3]))
-        missing = [n for n in axis if n not in diagonal]
-        if missing:
-            out.append("  no test reaches its paired DP: " + ", ".join(f"FR{fmt(n)}" for n in missing))
-        if args.expect and order_rank[cls] > order_rank[args.expect]:
-            rep.error(f"{title} is {cls}; expected {args.expect}.")
-        out.append("")
-
+            rep.error(f"{dps[num].name} is a leaf DP with no PV entry.")
+    source, paired, test_refs, observed = collect(src, tests, dps, frs, rep)
+    for num in sorted(set(dps) & set(frs) - paired):
+        rep.error(f"FR{fmt(num)} has no paired-test token for DP{fmt(num)} or its subtree.")
+    complete = not rep.errors
+    out = [f"Code-reference matrices: {src}  tests: {tests}",
+           "Rows are FRs, columns are DPs. R = cross-branch code reference; T = paired DP named in test text (not executed); . = no reference found; ? = paired test reference missing.", ""]
+    scopes = {}
+    for num in sorted(set(dps) | set(frs)):
+        scopes.setdefault(num[:-1], []).append(num)
+    if not scopes:
+        out.append("reference pattern: incomplete")
+    for parent, axis in scopes.items():
+        title = "Scope " + ("DP" + fmt(parent) if parent else "design root")
+        out += render_scope(title, axis, source, paired, complete, rep, args.expect)
+    master = sorted(set(leaves(dps)) | set(leaves(frs)))
+    if len(scopes) > 1:
+        out += render_scope("Scope master (leaf FRs by leaf DPs)", master, source, paired, complete, rep, args.expect)
+    if args.expect == "uncoupled" and source:
+        rep.error(f"{len(source)} cross-branch code references violate --expect uncoupled. Each one is listed under 'Source-text references across branches'.")
+    graph, _ = pattern(sorted(dps), {(ref.row, ref.col) for ref in source})
+    if args.expect == "decoupled" and graph == "cyclic":
+        rep.error("A cycle of cross-branch code references violates --expect decoupled.")
+    out.append("Source-text references across branches")
+    out.extend(f"  FR{fmt(ref.row)} <- DP{fmt(ref.col)}: {ref.where}" for ref in source)
+    if not source:
+        out.append("  none observed")
+    out.append("Other source-text references (own subtree or ancestor; excluded from the cross-branch graph)")
+    out.extend(f"  FR{fmt(ref.row)} <- DP{fmt(ref.col)}: {ref.where}" for ref in observed if ref not in source)
+    out.append("Test-text references (not executed; excluded from the source graph)")
+    out.extend(f"  FR{fmt(ref.row)} <- DP{fmt(ref.col)}: {ref.where}" for ref in test_refs)
+    if not test_refs:
+        out.append("  none observed")
     if args.spec:
-        check_spec(Path(args.spec), root, src, tests, dps, frs, edges, rep)
-
-    out.append("Findings")
-    out += [str(f) for f in rep.findings] or ["- none"]
-    out.append("")
-    out.append(f"Errors: {rep.errors}")
-    out.append("A 0 means no code reference was found, not that no influence exists.")
+        check_spec(Path(os.path.abspath(args.spec)), root, src, tests, dps, frs, source, rep, args.expect)
+    out += ["", "Findings"]
+    out += [f"- {severity}: {message}" for severity, message in rep.findings] or ["- none"]
+    out += ["", f"Errors: {rep.errors}",
+            "A dot means that no reference was found. It does not prove a zero.",
+            "A clean result does not prove independence. Shared state and resources do not show in code references."]
     print("\n".join(out))
     return 1 if rep.errors else 0
 
